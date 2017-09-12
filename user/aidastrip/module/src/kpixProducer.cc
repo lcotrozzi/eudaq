@@ -16,11 +16,13 @@
 #include <stdlib.h>
 
 #include <signal.h>
-//--> kpix lib:
+//--> start of kpix libs:
 #include "KpixControl.h"
 #include "UdpLink.h"
 #include "System.h"
 #include "ControlServer.h"
+#include "Data.h"
+//--> end of kpix libs:
 
 //----------DOC-MARK-----BEG*DEC-----DOC-MARK----------
 //class System;
@@ -38,7 +40,8 @@ class kpixProducer : public eudaq::Producer {
   void OnStatus() override;
   
   void Mainloop();
-  
+  Data* pollKpixData(int &evt_counter);
+    
   static const uint32_t m_id_factory = eudaq::cstr2hash("kpixProducer");
   bool stop; //kpixdev
    
@@ -53,9 +56,12 @@ private:
   //int m_port; 
 
   std::string m_runrate, m_dataOverEvt;
-  
+
   bool m_exit_of_run;
   std::thread m_thd_run;
+
+  uint32_t m_runcount;
+  //bool m_noDevice;
 };
 //----------DOC-MARK-----END*DEC-----DOC-MARK---------
 
@@ -74,7 +80,7 @@ kpixProducer::kpixProducer(const std::string & name, const std::string & runcont
 {
   // Create and setup PGP link
   udpLink.setMaxRxTx(500000);
-  udpLink.open(8192,1,"192.168.1.16");
+  udpLink.open(8192,1,"192.168.1.16"); // to have multiple udplink connections
   //udpLink.openDataNet("127.0.0.1",8099);
   //usleep(100);
 }
@@ -86,7 +92,8 @@ void kpixProducer::DoInitialise(){
   // --- read the ini file:
   m_defFile = ini->Get("KPIX_CONFIG_FILE", "defaults.xml"); //kpixdev
   m_debug = ini->Get("KPIX_DEBUG", "False");
-      
+  //  m_noDevice = true; // if no device connected, to test sturcture
+  
   try{
     if (m_debug!="True" && m_debug!="False")
       throw std::string("      KPIX_DEBUG value error! (must be 'True' or 'False')\n");
@@ -134,9 +141,14 @@ void kpixProducer::DoConfigure(){
   
   //--> Kpix Run Control
   m_kpixRunState = conf->Get("KPIX_RunState","Running");
-  int runcount = conf->Get("KPIX_RunCount",0);
-  if (runcount!=0) kpix->getVariable("RunCount")->setInt(runcount);
-
+  m_runcount = conf->Get("KPIX_RunCount",0);
+  // if (m_runcount!=0) kpix->getVariable("RunCount")->setInt(m_runcount);
+  // kpix->getVariable("RunCount")->setInt(2);
+  std::cout<<"[producer:dev] m_runcount = "<< m_runcount <<std::endl;  
+  std::cout<<"[producer:dev] run count = "<< kpix->getVariable("RunCount")->getInt() <<std::endl;
+  //m_runcount = kpix->getVariable("RunCount")->getInt();
+  std::cout<<"[producer:dev] run progress = "<<kpix->getVariable("RunProgress")->getInt() <<std::endl;
+  
   m_runrate = kpix->getVariable("RunRate")->get();
   std::cout<<"[producer:dev] run_rate = "<< m_runrate <<std::endl;
 }
@@ -156,6 +168,7 @@ void kpixProducer::DoStopRun(){
   if(m_thd_run.joinable()){
     m_thd_run.join();
   }
+
   
 }
 //----------DOC-MARK-----BEG*RST-----DOC-MARK----------
@@ -166,6 +179,7 @@ void kpixProducer::DoReset(){
   m_exit_of_run = true;
   if(m_thd_run.joinable())
     m_thd_run.join();
+
   /* Step2: set the thread free and turned off the exit_of_run sign*/
   m_thd_run = std::thread();
   m_exit_of_run = false;
@@ -177,6 +191,7 @@ void kpixProducer::DoTerminate(){
   m_exit_of_run = true;
   if(m_thd_run.joinable())
     m_thd_run.join();
+
   //kpix->command("CloseDataFile",""); // no problem though file closed, as protected in kpix/generic/System.cpp
 
   /* stop listen to the hardware */
@@ -196,6 +211,7 @@ void kpixProducer::OnStatus(){
   SetStatusTag("Data/Event", m_dataOverEvt);
   SetStatusTag("Run Rate", m_runrate);
   SetStatusTag("Configuration Tab","conf. values computed from .config" );
+  SetStatusTag("KpixStopped", m_exit_of_run ? "true" : "false");
 }
 
 //----------DOC-MARK-----BEG*LOOP-----DOC-MARK----------
@@ -206,11 +222,20 @@ void kpixProducer::Mainloop(){
   kpix->command("OpenDataFile","");
   
   kpix->command("SetRunState",m_kpixRunState);
-  
-  for (int ii=10; ii>=0; ii--){
-    auto tp_next = std::chrono::steady_clock::now() +  std::chrono::seconds(1);
-    std::this_thread::sleep_until(tp_next);
 
+  auto tp_start_run = std::chrono::steady_clock::now();
+  bool save_ts=true;
+
+  int evt_counter = 0;
+
+  // for (int ii=10; ii>=0; ii--){
+  for (int ii = m_runcount; ii>=0; ii--){
+    /* sleep 1 second after each loop */
+    auto tp_current_evt = std::chrono::steady_clock::now();
+    auto tp_next = tp_current_evt +  std::chrono::seconds(1);
+    std::this_thread::sleep_until(tp_next);
+    
+    
     kpix->poll(NULL);
 
     auto btrial = kpix->getVariable("RunState")->get();
@@ -219,20 +244,72 @@ void kpixProducer::Mainloop(){
     auto dataOverEvt = kpix->getVariable("DataRxCount")->get();
     std::cout<< "\t[KPiX:dev] Data/Event ==> " << dataOverEvt <<std::endl;
     m_dataOverEvt=dataOverEvt;
-    
-    if (btrial =="Stopped") break;
+
+    /* start wmq-dev: polling data from kpix to eudaq*/
+    auto ev = eudaq::Event::MakeUnique("KpixRawEvt");
+    auto databuff = pollKpixData(evt_counter);
+
+    //--> data is ready
+    if (databuff!=NULL) {
+      auto tp_trigger = std::chrono::steady_clock::now();
+      
+      if (save_ts) {
+	std::chrono::nanoseconds this_ts_ns(tp_trigger - tp_start_run);
+	ev->SetTimestamp(this_ts_ns.count(), this_ts_ns.count());
+	std::cout<<"\t[Loop]: Timestamp enabled to use\n"; //wmq
+	std::cout<<"\t[Loop]: time stamp at ==> "<<this_ts_ns.count()<<"ns\n";
+      }
+      auto buff = databuff->data();
+      auto size = databuff->size();
+      std::vector<Data*> dataToSave = {databuff};
+
+      std::cout<<"[producer.CHECK] buff = "<< buff << "\n"
+	       <<"                 size = "<< size << std::endl;
+
+      //--> milestone: remember this pointer stuff @ August-17th
+      ev->AddBlock(0, buff, size*4);
+
+      delete databuff;
+      SendEvent(std::move(ev));
+    }
+    /* end wmq-dev: polling data from kpix to eudaq*/
+   
+
+    if (btrial =="Stopped") {
+      m_exit_of_run = true;
+      break;
+    }
     else if (m_exit_of_run){
       kpix->command("SetRunState","Stopped");
       break;
     } else/*do nothing*/;
+
   }
 
+  std::cout<<"FINISH: kpix finished running"<<std::endl;
+  std::cout<<"\t m_exit_of_run == "<< (m_exit_of_run ? "true" : "false") <<std::endl;
   /*Close data file to write*/
   kpix->command("CloseDataFile","");
 
   /* TODO: Do sth to get a stopped sign*/
-  
 }
+
+/* start wmq-dev: polling data from kpix to eudaq*/
+Data* kpixProducer::pollKpixData(int &evt_counter){
+
+  //if (evt_counter>=10) return; // a safety check
+  
+  // int evt_counter = 0;
+  // while(!m_exit_of_datapoll && !m_exit_of_run){
+  auto datbuff = udpLink.pollDataQueue(0);
+  if (datbuff != NULL) {
+    std::cout<< " @_@ COUNTER! Event #"<< evt_counter<<std::endl;
+    evt_counter++;
+  }
+    //}
+  return datbuff;
+  
+}/* end wmq-dev: polling data from kpix to eudaq*/
 
 
 //----------DOC-MARK-----END*IMP-----DOC-MARK----------

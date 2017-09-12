@@ -53,9 +53,9 @@ void readCSVToVector (std::string csv_str,
 }
 
 //----------DOC-MARK-----BEG*DEC-----DOC-MARK----------
-class SlowControlProducer : public eudaq::Producer {
+class tbscProducer : public eudaq::Producer {
   public:
-  SlowControlProducer(const std::string & name, const std::string & runcontrol);
+  tbscProducer(const std::string & name, const std::string & runcontrol);
   void DoInitialise() override;
   void DoConfigure() override;
   void DoStartRun() override;
@@ -64,7 +64,7 @@ class SlowControlProducer : public eudaq::Producer {
   void DoReset() override;
   void Mainloop();
 
-  static const uint32_t m_id_factory = eudaq::cstr2hash("SlowControlProducer");
+  static const uint32_t m_id_factory = eudaq::cstr2hash("tbscProducer");
 
   
   std::vector<std::string> ConvertStringToVec(std::string str, char delim)
@@ -78,7 +78,7 @@ class SlowControlProducer : public eudaq::Producer {
     }
     return vec;
   }
-  void fillChannelMap(std::string table="");
+  void fillChannelMap(std::string inttablename="");
   void odbcFetchData(SQLHSTMT stmt, /*statement handle allocated to a database*/
 		     SQLCHAR* dbcommand, /*mysql command to execute w/ stmt*/
 		     SQLSMALLINT columns, 
@@ -105,10 +105,8 @@ private:
   
   std::thread m_thd_run;
 
-  std::filebuf m_fb; // output file to print event
-
   // mapa<(string)ch_id, std::mapb>, mapb<aida_channels.colName, val>
-  std::map <std::string, std::map<std::string, std::string>> sc_para_map;
+  std::map <std::string, std::map<std::string, std::string>> m_sc_para_map;
   
   ///------ stale below
   //bool m_flag_ts;
@@ -130,11 +128,11 @@ private:
 //----------DOC-MARK-----BEG*REG-----DOC-MARK----------
 namespace{
   auto dummy0 = eudaq::Factory<eudaq::Producer>::
-    Register<SlowControlProducer, const std::string&, const std::string&>(SlowControlProducer::m_id_factory);
+    Register<tbscProducer, const std::string&, const std::string&>(tbscProducer::m_id_factory);
 }
 //----------DOC-MARK-----END*REG-----DOC-MARK----------
 //----------DOC-MARK-----BEG*CON-----DOC-MARK----------
-SlowControlProducer::SlowControlProducer(const std::string & name, const std::string & runcontrol):
+tbscProducer::tbscProducer(const std::string & name, const std::string & runcontrol):
   eudaq::Producer(name, runcontrol),
   m_exit_of_run(false),
   m_debug(false),
@@ -150,7 +148,7 @@ SlowControlProducer::SlowControlProducer(const std::string & name, const std::st
 
 }
 //----------DOC-MARK-----BEG*INI-----DOC-MARK----------
-void SlowControlProducer::DoInitialise(){
+void tbscProducer::DoInitialise(){
   auto ini = GetInitConfiguration();
   m_tbsc_dsn = ini->Get("TBSC_DSN", "myodbc5a");
   m_tbsc_db  = ini->Get("TBSC_DATABASE", "aidaTest");
@@ -159,19 +157,20 @@ void SlowControlProducer::DoInitialise(){
 }
 
 //----------DOC-MARK-----BEG*CONF-----DOC-MARK----------
-void SlowControlProducer::DoConfigure(){
+void tbscProducer::DoConfigure(){
   auto conf = GetConfiguration();
   conf->Print(std::cout);
   m_tbsc_dsn=conf->Get("TBSC_DSN", m_tbsc_dsn);
   m_tbsc_db = conf->Get("TBSC_DATABASE", m_tbsc_db);
   std::string conf_debug = conf->Get("TBSC_DEBUG", "");
-  m_debug = (conf_debug=="true" || conf_debug=="True")? true: m_debug;
-  //m_debug=true;
+  if (conf_debug!="")
+    m_debug = (conf_debug=="true" || conf_debug=="True")? true: false;
+ 
   m_s_intvl = conf->Get("TBSC_INTERVAL_SEC", m_s_intvl);
   printf("check invl: %d\n", m_s_intvl);
 
   /* read the parameter mask from config, decide which parameters saved to events*/
-  std::string tbsc_mask = conf->Get("TBSC_PARA_MASK", "ch1,ch11,ch21,ch31");
+  std::string tbsc_mask = conf->Get("TBSC_PARA_MASK", "ch0,ch10,ch20,ch30");
   readCSVToVector(tbsc_mask, m_tbsc_mask);
   
   /* Connect to the DSN m_tbsc_dsn */
@@ -198,30 +197,26 @@ void SlowControlProducer::DoConfigure(){
 
   /*Fill in the readout data map*/
   fillChannelMap();
-  if (m_debug) printNestedMap(sc_para_map);
+  if (m_debug) printNestedMap(m_sc_para_map);
 }
 //----------DOC-MARK-----BEG*RUN-----DOC-MARK----------
-void SlowControlProducer::DoStartRun(){
+void tbscProducer::DoStartRun(){
   m_exit_of_run = false;
-  //--> start of evt print <--// wmq dev
-  //m_fb.open("out.txt", std::ios::out|std::ios::app);
-  m_fb.open("out.txt", std::ios::out);
   
-  m_thd_run = std::thread(&SlowControlProducer::Mainloop, this);
+  m_thd_run = std::thread(&tbscProducer::Mainloop, this);
 }
 //----------DOC-MARK-----BEG*STOP-----DOC-MARK----------
-void SlowControlProducer::DoStopRun(){
+void tbscProducer::DoStopRun(){
   m_exit_of_run = true;
   if(m_thd_run.joinable()){
     m_thd_run.join();
   }
-  m_fb.close();
 }
 //----------DOC-MARK-----BEG*RST-----DOC-MARK----------
-void SlowControlProducer::DoReset(){
+void tbscProducer::DoReset(){
 
   SQLDisconnect(m_dbc); // disconnect from driver 
-  if (m_fb.is_open()) m_fb.close();
+  //  if (m_fb.is_open()) m_fb.close();
   
   m_exit_of_run = true;
   if(m_thd_run.joinable())
@@ -235,7 +230,7 @@ void SlowControlProducer::DoReset(){
   
 }
 //----------DOC-MARK-----BEG*TER-----DOC-MARK----------
-void SlowControlProducer::DoTerminate(){
+void tbscProducer::DoTerminate(){
   m_exit_of_run = true;
   if(m_thd_run.joinable())
     m_thd_run.join();
@@ -246,14 +241,12 @@ void SlowControlProducer::DoTerminate(){
   SQLFreeHandle(SQL_HANDLE_DBC, m_dbc);
   SQLFreeHandle(SQL_HANDLE_ENV, m_env);
   SQLFreeHandle(SQL_HANDLE_STMT, m_stmt);
-  if (m_fb.is_open()) m_fb.close();
 
 }
 
 //----------DOC-MARK-----BEG*LOOP-----DOC-MARK----------
-void SlowControlProducer::Mainloop(){
-  std::ostream os(&m_fb);
-
+void tbscProducer::Mainloop(){
+  auto tp_start_run = std::chrono::steady_clock::now();
   
   /* Allocate a statement handle */
   // SQLAllocHandle(SQL_HANDLE_STMT, m_dbc, &m_stmt);
@@ -278,7 +271,8 @@ void SlowControlProducer::Mainloop(){
       SQLLEN indicator;
       char buf_ut[512];
       if ( SQL_SUCCEEDED(SQLGetData(m_stmt, 1, SQL_C_CHAR, &buf_ut, sizeof(buf_ut), &indicator))){
-	if (indicator == SQL_NULL_DATA) strcpy (buf_ut,"NULL");
+	//---> in case empty, give null to the buffer
+	if (indicator == SQL_NULL_DATA) strcpy (buf_ut,"NULL"); 
 	printf("\tUpdateTime: %s\n", buf_ut);
 	
 	if (std::string(buf_ut)!=latest_update){
@@ -297,22 +291,31 @@ void SlowControlProducer::Mainloop(){
       }
     }
 
-    auto ev = eudaq::Event::MakeUnique("SCRawEvt");
-
+    auto rawevt = eudaq::Event::MakeUnique("SCRawEvt");
+    
+    
     /* loop over sc data to set tag to events if shown up in the mask vector*/
     auto tagdata = sc_data["1"]; 
     for(auto it = tagdata.cbegin(); it != tagdata.cend(); ++it){
       if (std::find(m_tbsc_mask.begin(), m_tbsc_mask.end(), it->first) != m_tbsc_mask.end()){
 	/* if channel is required to tag to event*/
 	std::cout << it->first << " " << it->second << "\n";
-	ev->SetTag(it->first, it->second);
+	rawevt->SetTag(it->first, it->second);
       }
     }
-      
-    ev->Print(os, 0);// print event info to the m_fb txt
     
-    SendEvent(std::move(ev));
-    
+    //--> If you want a timestampe
+    bool flag_ts = true; // to be moved to config
+    if (flag_ts){
+      auto tp_current_evt = std::chrono::steady_clock::now();
+      auto tp_end_of_busy = tp_current_evt + std::chrono::seconds(m_s_intvl);
+      std::chrono::nanoseconds du_ts_beg_ns(tp_current_evt - tp_start_run);
+      std::chrono::nanoseconds du_ts_end_ns(tp_end_of_busy - tp_start_run);
+      rawevt->SetTimestamp(du_ts_beg_ns.count(), du_ts_end_ns.count());
+      std::cout<< "CHECK: start =="<<du_ts_beg_ns.count() <<"; end =="<< du_ts_end_ns.count()<<std::endl;
+    }
+
+    SendEvent(std::move(rawevt)); 
     
     /*sleep for m_s_invl seconds, but awake every second to check status*/
     for( int i_intvl=m_s_intvl; i_intvl>=0; i_intvl--){
@@ -335,7 +338,7 @@ void SlowControlProducer::Mainloop(){
 //----------DOC-MARK-----BEG*toolFunc-----DOC-MARK----------
 
 
-void SlowControlProducer::odbcExtractError(std::string fn,
+void tbscProducer::odbcExtractError(std::string fn,
 					   SQLHANDLE handle,
 					   SQLSMALLINT type){
   SQLINTEGER i = 0;
@@ -357,7 +360,7 @@ void SlowControlProducer::odbcExtractError(std::string fn,
   printf("\n");
 }
 
-void SlowControlProducer::odbcDoAlotPrint(){
+void tbscProducer::odbcDoAlotPrint(){
   EUDAQ_INFO("[DEBUG] Print a lot info of ODBC driver/driver manager/data source:");
     
   SQLCHAR dbms_name[256], dbms_ver[256];
@@ -393,7 +396,7 @@ void SlowControlProducer::odbcDoAlotPrint(){
   printf("\n");
 }
 
-void SlowControlProducer::odbcListDSN(){
+void tbscProducer::odbcListDSN(){
   SQLUSMALLINT direction;
   SQLRETURN _ret;
 
@@ -411,24 +414,24 @@ void SlowControlProducer::odbcListDSN(){
     if (_ret == SQL_SUCCESS_WITH_INFO) printf("\tdata truncation\n");
   }
   printf("\n");
-} // ---- End of SlowControlProducer::odbcListDSN() ----- 
+} // ---- End of tbscProducer::odbcListDSN() ----- 
 
-void SlowControlProducer::fillChannelMap(std::string table){
+void tbscProducer::fillChannelMap(std::string intablename){
   /* Descibe: Fill in the nested map from the complimentary table from the database,
    indexing by the column names from the table noting the SC data*/
   
-  table = (table=="")?"aida_channels":table;
+  intablename = (intablename=="")?"aida_channels":intablename;
   //SQLFreeStmt(m_stmt,SQL_CLOSE);
-  // SQLExecDirect(m_stmt, (SQLCHAR*)("select * from "+table+";").c_str(), SQL_NTS);
+  // SQLExecDirect(m_stmt, (SQLCHAR*)("select * from "+intablename+";").c_str(), SQL_NTS);
 
   SQLFreeStmt(m_stmt, SQL_CLOSE);
   SQLExecDirect(m_stmt,
-		(SQLCHAR*)("select * from "+table+" ;").c_str(),
+		(SQLCHAR*)("select * from "+intablename+" ;").c_str(),
 		SQL_NTS);
   /* How many columns are there */
   SQLNumResultCols(m_stmt, &m_columns);
   /* Clear the map to refill */
-  sc_para_map.clear();
+  m_sc_para_map.clear();
 
   SQLRETURN ret; /* ODBC API return status */
   int row = 0;
@@ -484,17 +487,17 @@ void SlowControlProducer::fillChannelMap(std::string table){
       } // if column info & value get correctly
     } // loop over all columns in a given row
 
-    sc_para_map.emplace(sc_para_map_index, resdata);
+    m_sc_para_map.emplace(sc_para_map_index, resdata);
     
   } // loop over all rows
   
   printf("%s\n",std::string(20,'*').c_str());
 
-} // ---- End of SlowControlProducer::fillChannelMap(std::string table) ----- 
+} // ---- End of tbscProducer::fillChannelMap(std::string intablename) ----- 
  
 
 
-void SlowControlProducer::odbcFetchData(SQLHSTMT stmt,
+void tbscProducer::odbcFetchData(SQLHSTMT stmt,
 					SQLCHAR* dbcommand,
 					SQLSMALLINT columns,
 					std::map<std::string, std::map<std::string, std::string>> &data_map
