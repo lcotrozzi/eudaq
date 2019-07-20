@@ -142,22 +142,20 @@ void RunControlGUI::on_btnConfig_clicked(){
   }
   if(m_rc){
     m_rc->ReadConfigureFile(settings);
-    //m_rc->Configure();
-     
-        // mengqing needs certain order                                                                                                                                                                     
-        for(auto &conn_status: m_map_conn_status_last)
-         {
-             if(m_rc && conn_status.first->GetName()=="aida_tlu")
-m_rc->ConfigureSingleConnection(conn_status.first);
-         }
-         std::this_thread::sleep_for (std::chrono::seconds(10));
-	 updateInfos();
-	 for(auto &conn_status: m_map_conn_status_last)
-         {
-             if(m_rc && conn_status.first->GetName()!="aida_tlu")
-m_rc->ConfigureSingleConnection(conn_status.first);
-         }
-         // -- Lennart's code end  
+    m_rc->Configure(); // commented out because of the following code
+    
+    // // mengqing needs certain order
+    // for(auto &conn_status: m_map_conn_status_last) {
+    // 	if(m_rc && conn_status.first->GetName()=="aida_tlu")
+    // 	  m_rc->ConfigureSingleConnection(conn_status.first);
+    // }
+    // std::this_thread::sleep_for (std::chrono::seconds(10));
+    // updateInfos();
+    // for(auto &conn_status: m_map_conn_status_last) {
+    //   if(m_rc && conn_status.first->GetName()!="aida_tlu")
+    // 	m_rc->ConfigureSingleConnection(conn_status.first);
+    // }
+    // // -- Lennart's code end  
   }
   if(m_rc)
   {
@@ -179,8 +177,23 @@ void RunControlGUI::on_btnStart_clicked(){
     }
     txtNextRunNumber->clear();
   }
-  if(m_rc)
-    m_rc->StartRun();
+  if(m_rc){
+    //m_rc->StartRun();
+
+    // mengqing's code start - copy Lennart's configure idea
+    for(auto &conn_status: m_map_conn_status_last) {
+	if(m_rc && conn_status.first->GetName()=="newkpix")
+	  m_rc->StartSingleConnection(conn_status.first);
+    }
+    std::this_thread::sleep_for (std::chrono::seconds(10));
+    updateInfos();
+    for(auto &conn_status: m_map_conn_status_last) {
+      if(m_rc && conn_status.first->GetName()!="newkpix")
+	m_rc->StartSingleConnection(conn_status.first);
+    }
+    // -- mengqing's code end  
+    
+  }
 }
 
 void RunControlGUI::on_btnStop_clicked() {
