@@ -166,20 +166,20 @@ void RunControlGUI::on_btnStart_clicked(){
     txtNextRunNumber->clear();
   }
   if(m_rc){
-    //m_rc->StartRun();
+    m_rc->StartRun();
 
-    // mengqing's code start - copy Lennart's configure idea
-    for(auto &conn_status: m_map_conn_status_last) {
-	if(m_rc && conn_status.first->GetName()=="newkpix")
-	  m_rc->StartSingleConnection(conn_status.first);
-    }
-    std::this_thread::sleep_for (std::chrono::seconds(10));
-    updateInfos();
-    for(auto &conn_status: m_map_conn_status_last) {
-      if(m_rc && conn_status.first->GetName()!="newkpix")
-	m_rc->StartSingleConnection(conn_status.first);
-    }
-    // -- mengqing's code end  
+    // // mengqing's code start - copy Lennart's configure idea
+    // for(auto &conn_status: m_map_conn_status_last) {
+    // 	if(m_rc && conn_status.first->GetName()=="newkpix")
+    // 	  m_rc->StartSingleConnection(conn_status.first);
+    // }
+    // std::this_thread::sleep_for (std::chrono::seconds(10));
+    // updateInfos();
+    // for(auto &conn_status: m_map_conn_status_last) {
+    //   if(m_rc && conn_status.first->GetName()!="newkpix")
+    // 	m_rc->StartSingleConnection(conn_status.first);
+    // }
+    // // -- mengqing's code end  
     
   }
 }
