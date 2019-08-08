@@ -55,12 +55,12 @@ private:
 	//~LoCo 05/08: can call map in monitor with .at
 	std::map<std::pair<int,int>, double> Calib_map = createMap("/home/lorenzo/data/real_calib/calib_normalgain.txt");
 	bool                      _pivot = false; // for StdPlane class which is designed for Mimosa;
-  
+	
 };
 
 namespace{
-  auto dummy0 = eudaq::Factory<eudaq::StdEventConverter>::
-    Register<kpixRawEvent2StdEventConverter>(kpixRawEvent2StdEventConverter::m_id_factory);
+	auto dummy0 = eudaq::Factory<eudaq::StdEventConverter>::
+		Register<kpixRawEvent2StdEventConverter>(kpixRawEvent2StdEventConverter::m_id_factory);
 }
 
 kpixRawEvent2StdEventConverter::kpixRawEvent2StdEventConverter() {
