@@ -270,11 +270,11 @@ std::cout << "ADDRESS" << _histo << std::endl;
 	  }// - sample loop over
 
 
-	  //~Loco 09/08 histogram written here
+	  //~Loco 09/08 histogram written here. TODO: move everything to deconstructor
 	  stringstream tmp;
 	  string outRoot;
 	  tmp.str("");
-char myStr[80];
+	  char myStr[84];
 	  timestamp_histo_test(myStr);
 	  tmp << "./TEST_HISTO/TEST_" << myStr << "_histo.root";
 	  outRoot = tmp.str();
@@ -283,11 +283,6 @@ char myStr[80];
 	  histo_test->Write();
 	  file->Close();
 
-	  
-/*
-	  //~LoCo 09/08 file
-	  TFile* file = new TFile("esx.root","RECREATE");
-	  */
 
 	  // debug:
 	  auto &plane = d2->GetPlane(0);
@@ -373,7 +368,7 @@ int kpixRawEvent2StdEventConverter::getStdPlaneID(uint kpix) const{
 
 // ~GETSTDKPIXID~
 
-//~LoCo 05/08. Notice: this works only after hitX reversal. Notice: useless, probably
+//~LoCo 05/08. Notice: this works only after hitX reversal. TODO: remove this useless function, really just remove it
 int kpixRawEvent2StdEventConverter::getStdKpixID(uint hitX, int planeID) const{
 
   if ( ( planeID == 0 ) && ( hitX <= 919 ) ) return 0;
@@ -451,14 +446,15 @@ double kpixRawEvent2StdEventConverter::ConvertADC2fC( int channelID, int kpixID,
 
 	  double hitCharge;
 
-	  std::cout << kpixID << "AAA" << channelID << "BBB" << Calib_map.at(std::make_pair(kpixID,channelID)) << std::endl;
+	  //TEST
+	  //std::cout << kpixID << "AAA" << channelID << "BBB" << Calib_map.at(std::make_pair(kpixID,channelID)) << std::endl;
 
 	  if ( Calib_map.at(std::make_pair(kpixID,channelID)) > 1.0 ) {
 
 	  	hitCharge = hitVal/Calib_map.at(std::make_pair(kpixID,channelID));
 
 		//Check result, might comment it later
-	  	std::cout << "Conversion: kpix #" << kpixID << ", channel #" << channelID << ", hitVal " << hitVal << ", hitCharge " << hitCharge << std::endl;
+	  	//std::cout << "Conversion: kpix #" << kpixID << ", channel #" << channelID << ", hitVal " << hitVal << ", hitCharge " << hitCharge << std::endl;
 
 	  }
 
@@ -472,15 +468,14 @@ double kpixRawEvent2StdEventConverter::ConvertADC2fC( int channelID, int kpixID,
 }
 
 
-//~LoCo 12/09
+//~LoCo 12/09. Look: only milliseconds are needed. Note down how many milliseconds from one file to another.
 //------ code for file timestamps:
 
-void timestamp_histo_test(char* outStr){
+void timestamp_histo_test(char* outStr, char* outStr2){
 
   timeval curTime;
   gettimeofday(&curTime, NULL);
   int milli = curTime.tv_usec / 1000;
-  //unsigned long micro = curTime.tv_sec*(uint64_t)1000000+curTime.tv_usec;
 
   char buffer [80];
 
