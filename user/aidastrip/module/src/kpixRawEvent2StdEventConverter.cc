@@ -75,11 +75,13 @@ private:
 	//~LoCo 13/08: for pedestal
 	TFile* _rFile;
 	TTree* _pedestal;
-	double _pedestal_median, _pedestal_MAD;
+	TH1F*  _MAD0_v_channel;
+	double _pedestal_median;
+	double _pedestal_MAD;
 	int _kpix_num, _channel_num, _bucket_num;
 	int _kpix_checking = 12;
 	int _bucket_checking = 1;
-	vector<double> _pedestal_results[12][1024][1];
+	//vector<double> _pedestal_results[12][1024][1];
 	
 };
 
@@ -105,9 +107,10 @@ kpixRawEvent2StdEventConverter::kpixRawEvent2StdEventConverter() {
 	_pedestal = new TTree("Online_pedestal_tree", "A ROOT Tree");
 	_pedestal->Branch("Online_pedestal_median", &_pedestal_median, "Online_pedestal_median/D");
 	_pedestal->Branch("Online_kpix_num", &_kpix_num, "Online_kpix_num/I");
-	_pedestal->Branch("Online_channel_num", &_channel_num, "Online_channel_num/I:");
+	_pedestal->Branch("Online_channel_num", &_channel_num, "Online_channel_num/I");
 	_pedestal->Branch("Online_bucket_num", &_bucket_num, "Online_bucket_num/I");
 	_pedestal->Branch("Online_pedestal_MAD", &_pedestal_MAD, "Online_pedestal_MAD/D");
+	_MAD0_v_channel = new TH1F("_MAD0_v_channel", "_MAD0_v_channel; Channel; #Entries", 1024, -0.5, 1023.5);
 }
 
 kpixRawEvent2StdEventConverter::~kpixRawEvent2StdEventConverter(){
@@ -190,6 +193,24 @@ bool kpixRawEvent2StdEventConverter::Converting(eudaq::EventSPC d1, eudaq::StdEv
 	  cycle.copy(kpixEvent, size_of_kpix);
 
 	  parseFrame(d2, cycle, isSelfTrig);
+
+
+	  std::cout << "hi1 " << std::endl;
+
+/*
+	  _pedestal_median = 3;
+	  _pedestal_MAD = 2;
+	  _channel_num = 2;
+	  _kpix_num = 5;
+	  _bucket_num = 0;
+*/
+	  std::cout << "hi2 " << std::endl;
+
+	  _pedestal->Fill();
+	  //if (_pedestal_MAD == 0)
+		//{
+		//_MAD0_v_channel->Fill(2);
+	  //}
 	
 	  // std::cout << "\t Uint32_t  = " << kpixEvent << "\n"
 	  //           << "\t evtNum    = " << kpixEvent[0] << std::endl;	
@@ -271,8 +292,8 @@ void kpixRawEvent2StdEventConverter::parseFrame(eudaq::StdEventSP d2, KpixEvent 
 	    continue;
 	  }
 
-	  //~LoCo: hitX is changed for planes 0, 3, 4. Now all planes have same axis direction
-	  if (planeID==0 | planeID==3 | planeID==4) hitX = 1839 - hitX;
+	  //~LoCo: hitX is changed for planes 0, 4, 5. Now all planes have same axis direction
+	  if (planeID==0 | planeID==4 | planeID==5) hitX = 1839 - hitX;
 
 	  std::cout << "[+] plane : "<< planeID << ", hitX at : " << hitX << std::endl;
 	  auto &plane = d2->GetPlane(planeID);
@@ -353,7 +374,7 @@ const{
 
   //~LoCo 13/08: Fill _pedestal_resolution
   //_pedestal_results[kpix][channel][bucket].push_back(3.5);
-  if ( hitCharge != -1 ) FillPedRes(kpix, channel, bucket, hitCharge, _pedestal_results);
+  //if ( hitCharge != -1 ) FillPedRes(kpix, channel, bucket, hitCharge, _pedestal_results);
     //std::cout << "DEBUG: PEDRES" << _pedestal_results[kpix][channel][bucket].at(0) << std::endl;
 
   
@@ -386,12 +407,12 @@ int kpixRawEvent2StdEventConverter::getStdKpixID(uint hitX, int planeID) const{
   if ( ( planeID == 1 ) && ( hitX >= 920 ) ) return 2;
   if ( ( planeID == 2 ) && ( hitX <= 919 ) ) return 5;
   if ( ( planeID == 2 ) && ( hitX >= 920 ) ) return 4;
-  if ( ( planeID == 3 ) && ( hitX <= 919 ) ) return 10;
-  if ( ( planeID == 3 ) && ( hitX >= 920 ) ) return 11;
+  if ( ( planeID == 3 ) && ( hitX <= 919 ) ) return 11;
+  if ( ( planeID == 3 ) && ( hitX >= 920 ) ) return 10;
   if ( ( planeID == 4 ) && ( hitX <= 919 ) ) return 8;
   if ( ( planeID == 4 ) && ( hitX >= 920 ) ) return 9;
-  if ( ( planeID == 5 ) && ( hitX <= 919 ) ) return 7;
-  if ( ( planeID == 5 ) && ( hitX >= 920 ) ) return 6;
+  if ( ( planeID == 5 ) && ( hitX <= 919 ) ) return 6;
+  if ( ( planeID == 5 ) && ( hitX >= 920 ) ) return 7;
 
 }
 
