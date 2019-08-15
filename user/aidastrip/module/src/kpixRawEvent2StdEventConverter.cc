@@ -56,9 +56,6 @@ public:
 	//~LoCo 07/08 ConvertADC2fC: called inside parseFrame. 09/08 inside parseSample
 	double ConvertADC2fC( int channelID, int planeID, int hitVal ) const;
 
-	// //~LoCo 13/08 FillPedRes(): array of vectors
-	// void FillPedRes(uint kpix, uint channel, uint bucket, double hitCharge, vector<double> _pedestal_results[][1024][1]) const;
-
 private:
 	int getStdPlaneID(uint kpix) const;
 	int getStdKpixID(uint hitX, int planeID) const;
@@ -75,7 +72,7 @@ private:
 	//~LoCo 13/08: for pedestal
 	TFile* _rFile;
 	TTree* _pedestal_tree = nullptr;
-	//~MQ: mutable variables to be modified in const functions:
+	//~MQ 14/08: mutable variables to be modified in const functions:
 	mutable double _pedestal_median, _pedestal_MAD;
 	mutable int _kpix_num=-1, _channel_num=-1, _bucket_num=-1 ;
 	mutable double _charge;
@@ -93,9 +90,9 @@ kpixRawEvent2StdEventConverter::kpixRawEvent2StdEventConverter() {
 
 	//~LoCo 12/08 Test histogram for testing
 	auto outRoot =  timestamp_milli_seconds();
-	auto outRoot_ped =  timestamp_milli_seconds();
+	//auto outRoot_ped =  timestamp_milli_seconds();
 	outRoot = "./TEST_HISTO/TEST_" + outRoot + "_histo.root";
-	outRoot_ped = "./TEST_PEDESTAL/TEST_" + outRoot_ped + "_pedestal.root";
+	//outRoot_ped = "./TEST_PEDESTAL/TEST_" + outRoot_ped + "_pedestal.root";
 
 	_file = new TFile(outRoot.c_str(),"recreate");
 	_histo = new TH1F("histo","",10e3,0,10e3);
@@ -103,7 +100,7 @@ kpixRawEvent2StdEventConverter::kpixRawEvent2StdEventConverter() {
 	
 	_rFile = new TFile("test_pedestal.root","update");
 	
-	//~MQ: check if there is a tree inside the rfile, if not create:
+	//~MQ 14/08: check if there is a tree inside the rfile, if not create:
 	if(_rFile->Get("pedestal_tree")){
 		_rFile->GetObject("pedestal_tree", _pedestal_tree);
 		_pedestal_tree->SetBranchAddress("kpix_num",    &_kpix_num);
@@ -128,7 +125,7 @@ kpixRawEvent2StdEventConverter::~kpixRawEvent2StdEventConverter(){
 	delete _file;
 	
 	_rFile->cd();
-	//~MQ: options needed for writing to the same tree:
+	//~MQ 14/08: options needed for writing to the same tree:
 	_pedestal_tree->Write(0, TObject::kWriteDelete, 0);
 	_rFile->Close();
 	delete _rFile;
@@ -195,24 +192,6 @@ bool kpixRawEvent2StdEventConverter::Converting(eudaq::EventSPC d1, eudaq::StdEv
 	  cycle.copy(kpixEvent, size_of_kpix);
 
 	  parseFrame(d2, cycle, isSelfTrig);
-
-
-	  std::cout << "hi1 " << std::endl;
-
-/*
-	  _pedestal_median = 3;
-	  _pedestal_MAD = 2;
-	  _channel_num = 2;
-	  _kpix_num = 5;
-	  _bucket_num = 0;
-*/
-	  std::cout << "hi2 " << std::endl;
-
-	  _pedestal->Fill();
-	  //if (_pedestal_MAD == 0)
-		//{
-		//_MAD0_v_channel->Fill(2);
-	  //}
 	
 	  // std::cout << "\t Uint32_t  = " << kpixEvent << "\n"
 	  //           << "\t evtNum    = " << kpixEvent[0] << std::endl;	
@@ -380,12 +359,6 @@ const{
   _charge = hitCharge;
   _pedestal_tree -> Fill();
   
-  //~LoCo 13/08: Fill _pedestal_resolution
-  //_pedestal_results[kpix][channel][bucket].push_back(3.5);
-  //if ( hitCharge != -1 ) FillPedRes(kpix, channel, bucket, hitCharge, _pedestal_results);
-    //std::cout << "DEBUG: PEDRES" << _pedestal_results[kpix][channel][bucket].at(0) << std::endl;
-
-  
   return std::make_tuple(getStdPlaneID(kpix), strip, hitCharge, bucket);
 
 }
@@ -467,7 +440,7 @@ std::map<std::pair<int,int>, double> kpixRawEvent2StdEventConverter::createMap(c
 
 	  myfile_calib.close();
 
-	std::cout<<"TEST DEBUGGING OUTPUT CALIBMAP" << std::endl;
+	  //std::cout<<"TEST DEBUGGING OUTPUT CALIBMAP" << std::endl;
 
 	  return Calib_map;
 
@@ -495,26 +468,6 @@ double kpixRawEvent2StdEventConverter::ConvertADC2fC( int channelID, int kpixID,
 	  
 
 }
-
-// ~FILLPEDRES~
-
-// //~LoCo 13/08: Fill vector double pedestal_results already existent as +++private+++
-// void kpixRawEvent2StdEventConverter::FillPedRes(uint kpix, uint channel, uint bucket, double hitCharge, vector<double> _pedestal_results[][1024][1]) const{
-
-// 	  int kpix_checking = 12;
-// 	  int bucket_checking = 1;
-
-// 	  if (bucket < bucket_checking){
-
-// 		if ( kpix < kpix_checking ){
-// //std::cout << "DEBUG: PEDRES1" << _PedRes.at(0) << std::endl;
-// 			_pedestal_results[kpix][channel][bucket].push_back(hitCharge);
-// std::cout << "DEBUG 2: PEDRES" << _pedestal_results[kpix][channel][bucket].at(0) << std::endl;
-// 		}
-// 	  }
-
-// 	  return;
-// }
 
 //~LoCo 12/09. Look: only milliseconds are needed. Note down how many milliseconds from one file to another.
 //------ code for file timestamps:
