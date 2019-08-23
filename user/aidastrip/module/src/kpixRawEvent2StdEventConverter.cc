@@ -20,6 +20,8 @@
 #include <vector>
 #include <math.h> // fabs
 
+
+
 #include "kpix_left_and_right.h"
 #include "TBFunctions.h"
 
@@ -28,6 +30,15 @@
 #include "TFile.h"
 #include "TTree.h"
 #include "TObject.h"
+
+
+//~LoCo 08/08 histogram (TODO: optimize)
+#include "TH1F.h"
+#include "TCanvas.h"
+#include "TFile.h"
+#include "TRandom.h"
+#include "TF1.h"
+#define maxlength 5000
 
 // Template for useful funcs for this class:
 double smallest_time_diff( vector<double> ext_list, int int_value);
@@ -70,6 +81,7 @@ public:
 	eudaq::Hit parseSample( KpixSample* sample) const;
 	
 
+
 private:
 	int getStdPlaneID(uint kpix) const;
 	int getStdKpixID(uint hitX, int planeID) const;
@@ -95,6 +107,7 @@ private:
 	mutable std::vector<double> m_vec_ExtTstamp;
 	mutable std::vector<double> m_KpixChargeList_perCycle[24]; // hardcoded to have up to 24 kpix
 	mutable std::vector<double> m_common_mode_perCycle;
+
 };
 
 namespace{
@@ -157,6 +170,7 @@ kpixRawEvent2StdEventConverter::kpixRawEvent2StdEventConverter() {
 kpixRawEvent2StdEventConverter::~kpixRawEvent2StdEventConverter(){}
 
 
+
 // ~CONVERTING~
 
 bool kpixRawEvent2StdEventConverter::Converting(eudaq::EventSPC d1, eudaq::StdEventSP d2, eudaq::ConfigSPC conf) const{
@@ -170,6 +184,7 @@ bool kpixRawEvent2StdEventConverter::Converting(eudaq::EventSPC d1, eudaq::StdEv
 	//string triggermode = d1->GetTag("triggermode", "internal");
 	string triggermode = "external";
 	m_isSelfTrig = triggermode == "internal" ? true:false ;
+
 	
 	if (m_isSelfTrig)
 		EUDAQ_INFO("kpixConverter is doing Self Trigger mode :)");
@@ -214,6 +229,7 @@ bool kpixRawEvent2StdEventConverter::Converting(eudaq::EventSPC d1, eudaq::StdEv
 	parseFrame(d2, cycle);
 	
 	return true;
+
 }
 
 // ~PARSEFRAME~
@@ -356,6 +372,7 @@ void kpixRawEvent2StdEventConverter::parseFrame(eudaq::StdEventSP d2, KpixEvent 
 	  std::cout << "debug: Num of Hit pixels: " << plane.HitPixels() << std::endl;
 	}
 	return;
+
 }
 	
 
@@ -485,6 +502,7 @@ int kpixRawEvent2StdEventConverter::createMap(const char* filename){//~LoCo 02/0
 }
 
 
+
 //~LoCo 02/08: convert hitVal (ADC) to fC with Lookup table. 07/08: function to pass array with channel values
 //~LoCo 09/08 REWRITTEN: works with channel, not strip
 double kpixRawEvent2StdEventConverter::ConvertADC2fC( int channelID, int kpixID, int hitVal ) const{
@@ -502,6 +520,7 @@ double kpixRawEvent2StdEventConverter::ConvertADC2fC( int channelID, int kpixID,
 	}
 	
 	return hitCharge;
+
 
 }
 
@@ -524,6 +543,7 @@ std::string timestamp_milli_seconds(){
 	sprintf(currentTime, "%s_%d", buffer, milli);
 
 	return std::string(currentTime);
+
 }
 
 //------ code for time diff:
