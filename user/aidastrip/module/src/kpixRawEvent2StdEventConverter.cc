@@ -558,7 +558,7 @@ double smallest_time_diff( vector<double> ext_list, int int_value){
 }
 
 double RotateStrip(double strip, int sensor){
-	if (sensor == 0 || sensor == 5 || sensor == 4) // kpix side showing towards beam movement beam side  KPIX >  < Beam
+	if (sensor == 1 || sensor == 2 || sensor == 3) // kpix side showing towards beam movement beam side  KPIX >  < Beam
 		return strip; // sensor 2 and sensor 5 have no stereo angle
 	else  // kpix side in direction of beam movement KPIX < < BEAM
 		return (-strip + 1839); // has to be 1839, because StandardPlane defines x-axis as a vector, and the SetSizeZs is to give the size of the vector, so the strip to input has to be set from 0 to 1839 
