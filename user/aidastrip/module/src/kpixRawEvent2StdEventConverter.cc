@@ -53,6 +53,7 @@ namespace eudaq{
 	typedef	struct {
 		double median;
 		double mad;
+		double noise;
 		double charge;
 	} Value;
 	
@@ -79,6 +80,7 @@ public:
 	void parseFrame(eudaq::StdEventSP d2, KpixEvent &cycle ) const;
 	//std::tuple<int, int, double> parseSample( KpixSample* sample) const;
 	eudaq::Hit parseSample( KpixSample* sample) const;
+	
 
 
 private:
@@ -87,7 +89,8 @@ private:
 	int createMap(const char* filename);//~LoCo 05/08
 	//~LoCo 07/08 ConvertADC2fC: called inside parseFrame. 09/08 inside parseSample
 	double ConvertADC2fC( int channelID, int planeID, int hitVal ) const;
-
+	void loopdir(TDirectory* dir, string histname, std::unordered_map<int, TH1F*> &hists) const;
+	std::unordered_map<int, TH1F*> loadNoiseDB() const;
 	
 private:
 	
@@ -97,7 +100,7 @@ private:
 	unordered_map<uint, uint> _rkpix2strip = kpix_right();
 	//~LoCo 05/08: can call map in monitor with .at
 	//std::map<std::pair<int,int>, double> m_calib_map = createMap("/home/lorenzo/data/real_calib/calib_normalgain.txt");
-  mutable std::map<std::pair<int,int>, double> m_calib_map;
+	mutable std::map<std::pair<int,int>, double> m_calib_map;
 
 	mutable bool m_isSelfTrig;
 	mutable eudaq::Database m_sampleDB;
@@ -116,20 +119,22 @@ namespace{
 
 kpixRawEvent2StdEventConverter::kpixRawEvent2StdEventConverter() {
 	
-	createMap("/opt/data/calib_normalgain.csv");
+	createMap("/scratch2/data/calib_normalgain.csv");
+	auto noise_hists = loadNoiseDB();
 
-		
 	TTree* pedestal_tree;
+	TFile* rFile;
 	double pedestal_median=0, pedestal_MAD=0;
 	int kpix_num=-1, channel_num=-1, bucket_num=-1 ;
 	
 	TH1::AddDirectory(kFALSE);
 
 	
-	std::string pedfile_name ="/opt/data/eudaq2-dev/Run_20190802_121655.dat.tree_pedestal.root";
+	std::string pedfile_name ="/scratch2/data/eudaq2-dev/Run_20190802_121655.dat.tree_pedestal.root";
+	
 	  //"/opt/data/eudaq2-dev/Run_20190802_115859.dat.tree_pedestal.root";
 	std::string pedtree_name = "pedestal_tree";
-	TFile* rFile = new TFile(pedfile_name.c_str(),"read");
+	rFile = new TFile(pedfile_name.c_str(),"read");
 
 	//~MQ: check if there is a tree inside the rfile, if not create:
 	if ( rFile->Get(pedtree_name.c_str()) ) {
@@ -140,13 +145,12 @@ kpixRawEvent2StdEventConverter::kpixRawEvent2StdEventConverter() {
 		pedestal_tree->SetBranchAddress("bucket_num",  &bucket_num);
 		pedestal_tree->SetBranchAddress("pedestal_median",   &pedestal_median );
 		pedestal_tree->SetBranchAddress("pedestal_MAD",      &pedestal_MAD );
-
 	}
 	else{
 		EUDAQ_ERROR("your pedestal tree file is not valid, check it!");
 	}
 
-			
+	
 	for(Long64_t entry = 0; entry< pedestal_tree->GetEntries(); entry++){
 
 		pedestal_tree->GetEntry(entry);
@@ -157,12 +161,20 @@ kpixRawEvent2StdEventConverter::kpixRawEvent2StdEventConverter() {
 		vv.median = pedestal_median;
 		vv.mad    = pedestal_MAD;
 		vv.charge = 0.0;
+
+		//-- get the noise out of noise_hists
+		if (!noise_hists.count(kpix_num)) std::cout << "Oh you do not have noise hist for kpix = "<< kpix_num << std::endl;
+		
+		auto noise_hist = noise_hists[kpix_num];
+		double noise = noise_hist->GetBinContent( channel_num+1 );
+		vv.noise = noise;
 		
 		m_sampleDB[ std::make_pair( kpix_num, channel_num ) ]= vv;
 		
 	}
 
 	rFile->Close();
+
 
 	delete rFile;
 }
@@ -182,7 +194,7 @@ bool kpixRawEvent2StdEventConverter::Converting(eudaq::EventSPC d1, eudaq::StdEv
 	
 	// TODO: currently is hard coded to change trigger mode
 	//string triggermode = d1->GetTag("triggermode", "internal");
-	string triggermode = "external";
+	string triggermode = "internal";
 	m_isSelfTrig = triggermode == "internal" ? true:false ;
 
 	
@@ -213,8 +225,8 @@ bool kpixRawEvent2StdEventConverter::Converting(eudaq::EventSPC d1, eudaq::StdEv
 	// TODO: hard coded to be 6 plane. - MQ
 	for (auto id=0; id<6; id++){
 		eudaq::StandardPlane plane(id, "lycoris", "lycoris");
-		plane.SetSizeZS(1840, // x, width, TODO: strip ID of half sensor
-		                1, // y, height
+		plane.SetSizeZS(1, // x, width, TODO: strip ID of half sensor
+		                1840, // y, height
 		                0 // not used 
 		                ); // TODO: only 1 frame, define for us as bucket, i.e. only bucket 0 is considered
 		plane.Print(std::cout);
@@ -241,7 +253,6 @@ void kpixRawEvent2StdEventConverter::parseFrame(eudaq::StdEventSP d2, KpixEvent 
 	for (auto && entry: m_sampleDB ){
 		entry.second.charge = 0.0;
 	}
-	
 	
 	/* globally set variable holders*/
 	KpixSample   *sample;
@@ -299,8 +310,8 @@ void kpixRawEvent2StdEventConverter::parseFrame(eudaq::StdEventSP d2, KpixEvent 
 			// PushPixel here. ~LoCo 01/08: changed '>' to '>='. Tested and kept
 			std::cout << "[+] plane : "<< planeID << ", hitX at : " << hitX << std::endl;
 			auto &plane = d2->GetPlane(planeID);
-			plane.PushPixel(hitX, // x
-			                1,    // y, always to be 1 since we are strips
+			plane.PushPixel(1, // x
+			                hitX,    // y, always to be 1 since we are strips
 			                1     // T pix
 			                );    // use bucket as input for frame_num
 		}
@@ -317,6 +328,12 @@ void kpixRawEvent2StdEventConverter::parseFrame(eudaq::StdEventSP d2, KpixEvent 
 		}
 		
 	}// - sample loop over
+
+
+
+
+
+//EXTERNAL TRIGGER ALGORITHM
 
 	if ( (!m_isSelfTrig) && (!emptyframe)   ){
 		
@@ -346,17 +363,19 @@ void kpixRawEvent2StdEventConverter::parseFrame(eudaq::StdEventSP d2, KpixEvent 
 			else strip = RotateStrip(strip, planeID);
 			
 			//~MQ: correct common mode noise
-			double charge_corr_CM = entry.second.charge - m_common_mode_perCycle.at(kpix);
+			//double charge_corr_CM = entry.second.charge - m_common_mode_perCycle.at(kpix);
+			double charge_corr_CM = entry.second.charge;
 			// TODO: plot  with cluster_analysis.cxx output :
 			// - noise
 			// - charge_corr_CM
 			// temperarily ignore S/N but use a harsh charge level cut
 			
-			if (charge_corr_CM > 1.5 ){
-			//if (true){
+			//if (charge_corr_CM > 0 ){
+			//if ( charge_corr_CM > 3*entry.second.noise ){
+			if (true){
 			  std::cout << "[+] plane : "<< planeID << ", hitX at : " << strip << std::endl;
 			  auto &plane = d2->GetPlane( getStdPlaneID(kpix) );
-			  plane.PushPixel(strip , 1, 1);
+			  plane.PushPixel(1 , strip, 1);
 			}
 			                        
 		}
@@ -524,6 +543,9 @@ double kpixRawEvent2StdEventConverter::ConvertADC2fC( int channelID, int kpixID,
 
 }
 
+// ~FILLPEDRES~
+
+
 //~LoCo 12/09. Look: only milliseconds are needed. Note down how many milliseconds from one file to another.
 //------ code for file timestamps:
 
@@ -558,9 +580,69 @@ double smallest_time_diff( vector<double> ext_list, int int_value){
 }
 
 double RotateStrip(double strip, int sensor){
-	if (sensor == 1 || sensor == 2 || sensor == 3) // kpix side showing towards beam movement beam side  KPIX >  < Beam
+	if (sensor == 0 || sensor == 5 || sensor == 4) // kpix side showing towards beam movement beam side  KPIX >  < Beam
 		return strip; // sensor 2 and sensor 5 have no stereo angle
 	else  // kpix side in direction of beam movement KPIX < < BEAM
 		return (-strip + 1839); // has to be 1839, because StandardPlane defines x-axis as a vector, and the SetSizeZs is to give the size of the vector, so the strip to input has to be set from 0 to 1839 
 	
+}
+
+std::unordered_map<int,TH1F*> kpixRawEvent2StdEventConverter::loadNoiseDB()const{
+	TH1::AddDirectory(kFALSE);
+		
+	std::string noisefile_name ="/scratch2/data/eudaq2-dev/Run_20190802_121655.dat_Run_20190802_121655.cluster.root";
+	//~MQ: load noise distribution histos
+	TFile* rFile = new TFile(noisefile_name.c_str(),"read");
+	std::unordered_map<int, TH1F*> noise_hists;
+	loopdir(rFile, "noise", noise_hists);
+	std::cout<< "[debug] how many noise hists found? -- "
+	         << noise_hists.size()
+	         << std::endl;
+	rFile->Close();
+	delete rFile;
+	return noise_hists;
+}
+		
+void kpixRawEvent2StdEventConverter::loopdir(TDirectory* dir, string histname, std::unordered_map<int, TH1F*> &hists)const{
+
+	TDirectory *dirsav = gDirectory;
+	TIter keys_iter(dir->GetListOfKeys());
+	TKey* key;
+	
+	while ((key = (TKey*)keys_iter())){
+		if (key->IsFolder()){
+			dir->cd(key->GetName());
+			TDirectory *subdir = gDirectory;
+			loopdir(subdir, histname, hists);
+			dirsav->cd();
+			continue;
+		}//-- recursively call this function
+		else{
+			string keyname = key->GetName();
+			string keytype = key->GetClassName();
+			
+			// if noise_v_channel, find TH1 with name "noise_v_channel_k#_b0"
+			if (int(histname.find("noise") != -1)){
+				//int found1 = keyname.find("noise_v_channel_k");
+				//int found2 = keyname.find("_b0");
+				if (int(keytype.find("TH1") == -1)) continue;
+				for ( int aa = 0; aa<12; aa++ ){
+					string tomatch = "noise_v_channel_k" ;
+					tomatch = tomatch + aa + "_b0";
+					if(keyname == tomatch){
+						TH1F *hist = (TH1F*)key->ReadObj();
+						hist->SetName(key->GetName());
+						hists[aa]= hist;
+						
+					}
+					
+				}
+				
+			}//-- case1 - look for 'noise' histogram
+			
+		}
+	}//-- loop over keys inside a TDirectory
+	
+
+
 }
